@@ -127,6 +127,9 @@ components: sinks: [Name=string]: {
 							if list.Contains(sinks[Name].features.send.compression.algorithms, "gzip") {
 								gzip: "[Gzip](\(urls.gzip)) standard DEFLATE compression."
 							}
+							if list.Contains(sinks[Name].features.send.compression.algorithms, "zstd") {
+								zstd: "[Zstd](\(urls.zstd)) Zstandard compression."
+							}
 						}
 					}
 				}

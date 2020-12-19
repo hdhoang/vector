@@ -38,6 +38,7 @@ use tokio::{
     time::{delay_for, Duration, Instant},
 };
 use tokio_util::codec::{Encoder, FramedRead, FramedWrite, LinesCodec};
+use zstd::Decoder as ZstdDecoder;
 
 pub mod stats;
 
@@ -279,6 +280,17 @@ pub fn lines_from_gzip_file<P: AsRef<Path>>(path: P) -> Vec<String> {
     file.read_to_end(&mut gzip_bytes).unwrap();
     let mut output = String::new();
     GzDecoder::new(&gzip_bytes[..])
+        .read_to_string(&mut output)
+        .unwrap();
+    output.lines().map(|s| s.to_owned()).collect()
+}
+
+pub fn lines_from_zstd_file<P: AsRef<Path>>(path: P) -> Vec<String> {
+    trace!(message = "Reading zstd file.", path = %path.as_ref().display());
+    let file = File::open(path).unwrap();
+    let mut output = String::new();
+    ZstdDecoder::new(file)
+        .unwrap()
         .read_to_string(&mut output)
         .unwrap();
     output.lines().map(|s| s.to_owned()).collect()

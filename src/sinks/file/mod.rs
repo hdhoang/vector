@@ -11,6 +11,7 @@ use crate::{
     template::Template,
 };
 use async_compression::tokio_02::write::GzipEncoder;
+use async_compression::tokio_02::write::ZstdEncoder;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{
@@ -68,8 +69,9 @@ pub enum Encoding {
 #[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Compression {
-    Gzip,
     None,
+    Gzip,
+    Zstd,
 }
 
 impl Default for Compression {
@@ -81,6 +83,7 @@ impl Default for Compression {
 enum OutFile {
     Regular(File),
     Gzip(GzipEncoder<File>),
+    Zstd(ZstdEncoder<File>),
 }
 
 impl OutFile {
@@ -88,6 +91,7 @@ impl OutFile {
         match compression {
             Compression::None => OutFile::Regular(file),
             Compression::Gzip => OutFile::Gzip(GzipEncoder::new(file)),
+            Compression::Zstd => OutFile::Zstd(ZstdEncoder::new(file)),
         }
     }
 
@@ -95,6 +99,7 @@ impl OutFile {
         match self {
             OutFile::Regular(file) => file.sync_all().await,
             OutFile::Gzip(gzip) => gzip.get_mut().sync_all().await,
+            OutFile::Zstd(zstd) => zstd.get_mut().sync_all().await,
         }
     }
 
@@ -102,6 +107,7 @@ impl OutFile {
         match self {
             OutFile::Regular(file) => file.shutdown().await,
             OutFile::Gzip(gzip) => gzip.shutdown().await,
+            OutFile::Zstd(zstd) => zstd.shutdown().await,
         }
     }
 
@@ -109,6 +115,7 @@ impl OutFile {
         match self {
             OutFile::Regular(file) => file.write_all(src).await,
             OutFile::Gzip(gzip) => gzip.write_all(src).await,
+            OutFile::Zstd(zstd) => zstd.write_all(src).await,
         }
     }
 
@@ -344,8 +351,8 @@ impl StreamSink for FileSink {
 mod tests {
     use super::*;
     use crate::test_util::{
-        lines_from_file, lines_from_gzip_file, random_events_with_stream, random_lines_with_stream,
-        temp_dir, temp_file, trace_init,
+        lines_from_file, lines_from_gzip_file, lines_from_zstd_file, random_events_with_stream,
+        random_lines_with_stream, temp_dir, temp_file, trace_init,
     };
     use futures::stream;
     use std::convert::TryInto;
@@ -400,6 +407,31 @@ mod tests {
         sink.run(events).await.unwrap();
 
         let output = lines_from_gzip_file(template);
+        for (input, output) in input.into_iter().zip(output) {
+            assert_eq!(input, output);
+        }
+    }
+
+    #[tokio::test]
+    async fn single_partition_zstd() {
+        trace_init();
+
+        let template = temp_file();
+
+        let config = FileSinkConfig {
+            path: template.clone().try_into().unwrap(),
+            idle_timeout_secs: None,
+            encoding: Encoding::Text.into(),
+            compression: Compression::Zstd,
+        };
+
+        let mut sink = FileSink::new(&config, Acker::Null);
+        let (input, _) = random_lines_with_stream(100, 64);
+
+        let events = Box::pin(stream::iter(input.clone().into_iter().map(Event::from)));
+        sink.run(events).await.unwrap();
+
+        let output = lines_from_zstd_file(template);
         for (input, output) in input.into_iter().zip(output) {
             assert_eq!(input, output);
         }

@@ -7368,6 +7368,7 @@ dependencies = [
  "walkdir",
  "warp",
  "windows-service",
+ "zstd",
 ]
 
 [[package]]
